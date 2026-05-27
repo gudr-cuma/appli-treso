@@ -9,3 +9,5 @@ dist-ssr
 unpacked
 extracted_text.txt
 _temp.zip
+~$*.xlsx
+.claude/settings.local.json

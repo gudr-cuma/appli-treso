@@ -1,156 +1,165 @@
-/**
- * REQUÊTES SQL — À compléter avec les vrais noms de tables ERP223B
- * =================================================================
- *
- * Chaque fonction reçoit un pool `mssql` et retourne un tableau d'objets
- * au format attendu par le front-end (même structure que l'onglet Excel).
- *
- * Quand tu m'envoies les noms de tables / colonnes ERP, je remplis les TODO.
- *
- * En attendant : toutes les fonctions renvoient [] → l'app démarre en mode SQL
- * mais affiche des listes vides. Seul le login sera également vide (voir note users).
- */
+const { readSheets } = require('./excel')
 
 // ---------------------------------------------------------------------------
-// USERS — Utilisateurs de l'application
-// ---------------------------------------------------------------------------
+// USERS — TODO: créer une table TRESO_USERS dans ERP223B
 // Colonnes attendues : id, email, password, prenom, nom, photo_url, role
+// ---------------------------------------------------------------------------
 async function getUsers(pool) {
-  // TODO: remplacer par le vrai nom de table/vue
-  // Exemple :
-  // const r = await pool.request().query(`
-  //   SELECT USR_ID    AS id,
-  //          USR_EMAIL  AS email,
-  //          USR_MDP    AS password,
-  //          USR_PRENOM AS prenom,
-  //          USR_NOM    AS nom,
-  //          NULL       AS photo_url,
-  //          'user'     AS role
-  //   FROM [dbo].[T_UTILISATEURS]
-  // `)
-  // return r.recordset
-  return []
+  // Pas encore de table SQL dédiée — lecture depuis Excel en attendant
+  const { users } = readSheets('users')
+  return users
 }
 
 // ---------------------------------------------------------------------------
-// CUMA
+// CUMA — table SOC
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, nom, logo_url
 async function getCuma(pool) {
-  // TODO
-  // const r = await pool.request().query(`
-  //   SELECT CUMA_ID   AS id,
-  //          CUMA_NOM  AS nom,
-  //          NULL      AS logo_url
-  //   FROM [dbo].[T_CUMA]
-  // `)
-  // return r.recordset
-  return []
+  const r = await pool.request().query(`
+    SELECT RTRIM(DOS) AS id,
+           RTRIM(NOM) AS nom
+    FROM   [dbo].[SOC]
+    WHERE  DOS <> '999'
+  `)
+  return r.recordset
 }
 
 // ---------------------------------------------------------------------------
-// USER_CUMA — Lien M:N utilisateur ↔ CUMA
+// USER_CUMA — lecture depuis Excel (lien user app ↔ DOS Divalto)
 // ---------------------------------------------------------------------------
-// Colonnes attendues : user_id, cuma_id
 async function getUserCuma(pool) {
-  // TODO
-  return []
+  const { user_cuma } = readSheets('user_cuma')
+  return user_cuma.map((r) => ({ ...r, cuma_id: String(r.cuma_id) }))
 }
 
 // ---------------------------------------------------------------------------
-// ADHERENTS
+// ADHERENTS — table CLI
+// Remarque : CLI n'a pas de colonne PRENOM ni CODE explicite.
+//   - code        = NOMABR (abréviation du tiers)
+//   - dematerialisation = DEMATCOD
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, cuma_id, code, nom, prenom, mode_reglement, dematerialisation
 async function getAdherents(pool) {
-  // TODO : exemple de mapping complet
-  // const r = await pool.request().query(`
-  //   SELECT ADH_ID            AS id,
-  //          ADH_CUMA_ID       AS cuma_id,
-  //          ADH_CODE          AS code,
-  //          ADH_NOM           AS nom,
-  //          ADH_PRENOM        AS prenom,
-  //          ADH_MODE_REGLT    AS mode_reglement,
-  //          ADH_DEMAT         AS dematerialisation
-  //   FROM [dbo].[T_ADHERENTS]
-  //   WHERE ADH_ACTIF = 1
-  // `)
-  // return r.recordset
-  return []
+  const r = await pool.request().query(`
+    SELECT RTRIM(TIERS)    AS id,
+           RTRIM(DOS)      AS cuma_id,
+           RTRIM(NOMABR)   AS code,
+           RTRIM(NOM)      AS nom,
+           NULL            AS prenom,
+           RTRIM(REGL)     AS mode_reglement,
+           RTRIM(DEMATCOD) AS dematerialisation
+    FROM   [dbo].[CLI]
+  `)
+  return r.recordset
 }
 
 // ---------------------------------------------------------------------------
-// FACTURES
+// FACTURES — table ENT
+// Remarque : le montant HT s'appelle HTMT dans Divalto (pas MTHT).
+//   - montant_tva = TTCMT - HTMT
+//   - payee       = NOTE (0 = non réglée)
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, cuma_id, adherent_id, numero, date, type,
-//                      montant_ht, montant_tva, montant_ttc, date_echeance,
-//                      payee, url_pdf
 async function getFactures(pool) {
-  // TODO
-  return []
+  const r = await pool.request().query(`
+    SELECT CAST(PINO AS varchar(20)) AS id,
+           RTRIM(DOS)                AS cuma_id,
+           RTRIM(TIERS)              AS adherent_id,
+           CAST(PINO AS varchar(20)) AS numero,
+           PIDT                      AS date,
+           RTRIM(OP)                 AS type,
+           HTMT                      AS montant_ht,
+           TTCMT - HTMT              AS montant_tva,
+           TTCMT                     AS montant_ttc,
+           ECHDT                     AS date_echeance,
+           CAST(NOTE AS int)         AS payee,
+           NULL                      AS url_pdf
+    FROM   [dbo].[ENT]
+  `)
+  return r.recordset
 }
 
 // ---------------------------------------------------------------------------
-// REGLEMENTS
+// REGLEMENTS — pas dans SQL, lecture depuis Excel
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, facture_id, statut (en_attente|regle), date, montant
 async function getReglements(pool) {
-  // TODO
-  return []
+  const { reglements } = readSheets('reglements')
+  return reglements
 }
 
 // ---------------------------------------------------------------------------
-// CONTACTS
+// CONTACTS — table T2
+// T2 stocke TEL, TELGSM et EMAIL dans la même ligne.
+// On les déplie ici en autant de lignes {type, valeur}.
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, adherent_id, type, valeur
 async function getContacts(pool) {
-  // TODO
-  return []
+  const r = await pool.request().query(`
+    SELECT T2_ID                  AS rid,
+           RTRIM(DOS)             AS cuma_id,
+           RTRIM(TIERS)           AS adherent_id,
+           NULLIF(RTRIM(TEL),   '') AS tel,
+           NULLIF(RTRIM(TELGSM),'') AS gsm,
+           NULLIF(RTRIM(EMAIL), '') AS email
+    FROM   [dbo].[T2]
+  `)
+  const rows = []
+  for (const row of r.recordset) {
+    if (row.tel)
+      rows.push({ id: `${row.rid}_tel`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'tel',    valeur: row.tel })
+    if (row.gsm)
+      rows.push({ id: `${row.rid}_gsm`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'telgsm', valeur: row.gsm })
+    if (row.email)
+      rows.push({ id: `${row.rid}_email`, cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'email',  valeur: row.email })
+  }
+  return rows
 }
 
 // ---------------------------------------------------------------------------
-// ADRESSES
+// ADRESSES — table T1
+// Remarque : libelle n'existe pas dans T1 (→ null).
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, adherent_id, libelle, ligne1, cp, ville
 async function getAdresses(pool) {
-  // TODO
-  return []
+  const r = await pool.request().query(`
+    SELECT T1_ID                AS id,
+           RTRIM(TIERS)         AS adherent_id,
+           NULL                 AS libelle,
+           NULLIF(RTRIM(RUE), '') AS ligne1,
+           RTRIM(CPOSTAL)       AS cp,
+           RTRIM(VIL)           AS ville,
+           RTRIM(DOS)           AS cuma_id
+    FROM   [dbo].[T1]
+  `)
+  return r.recordset
 }
 
 // ---------------------------------------------------------------------------
-// RIB
+// RIB — pas dans SQL, lecture depuis Excel
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, adherent_id, iban, bic
 async function getRib(pool) {
-  // TODO
-  return []
+  const { rib } = readSheets('rib')
+  return rib
 }
 
 // ---------------------------------------------------------------------------
-// NEWS
+// NEWS — lecture depuis Excel
 // ---------------------------------------------------------------------------
-// Colonnes attendues : id, date, titre, message, actif
 async function getNews(pool) {
-  // TODO
-  return []
+  const { news } = readSheets('news')
+  return news
 }
 
 // ---------------------------------------------------------------------------
-// Point d'entrée principal — appelé par l'API
+// Point d'entrée appelé par l'API
 // ---------------------------------------------------------------------------
 async function getTables(pool) {
-  const [users, cuma, user_cuma, adherents, factures, reglements, contacts, adresses, rib, news] =
-    await Promise.all([
-      getUsers(pool),
-      getCuma(pool),
-      getUserCuma(pool),
-      getAdherents(pool),
-      getFactures(pool),
-      getReglements(pool),
-      getContacts(pool),
-      getAdresses(pool),
-      getRib(pool),
-      getNews(pool),
-    ])
+  // Séquentiel : msnodesqlv8 plante en cas de requêtes SQL parallèles sur le même pool
+  const users      = await getUsers(pool)
+  const cuma       = await getCuma(pool)
+  const user_cuma  = await getUserCuma(pool)
+  const adherents  = await getAdherents(pool)
+  const factures   = await getFactures(pool)
+  const reglements = await getReglements(pool)
+  const contacts   = await getContacts(pool)
+  const adresses   = await getAdresses(pool)
+  const rib        = await getRib(pool)
+  const news       = await getNews(pool)
   return { users, cuma, user_cuma, adherents, factures, reglements, contacts, adresses, rib, news }
 }
 
