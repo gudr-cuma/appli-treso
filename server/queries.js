@@ -1,4 +1,5 @@
 const { readSheets } = require('./excel')
+const { sql } = require('./db')
 
 // ---------------------------------------------------------------------------
 // USERS — TODO: créer une table TRESO_USERS dans ERP223B
@@ -52,32 +53,34 @@ async function getAdherents(pool) {
 }
 
 // ---------------------------------------------------------------------------
-// FACTURES — table ENT
-// Remarque : le montant HT s'appelle HTMT dans Divalto (pas MTHT).
-//   - montant_tva = TTCMT - HTMT
-//   - payee       = NOTE (0 = non réglée)
+// FACTURES — table ENT, filtrées par DOS (cuma_id)
+// Chargées à la demande via /api/factures?cuma_id=X (pas dans getTables).
 // ---------------------------------------------------------------------------
-async function getFactures(pool) {
-  const r = await pool.request().query(`
-    SELECT CAST(PINO AS varchar(20)) AS id,
-           RTRIM(DOS)                AS cuma_id,
-           RTRIM(TIERS)              AS adherent_id,
-           CAST(PINO AS varchar(20)) AS numero,
-           PIDT                      AS date,
-           RTRIM(OP)                 AS type,
-           HTMT                      AS montant_ht,
-           TTCMT - HTMT              AS montant_tva,
-           TTCMT                     AS montant_ttc,
-           ECHDT                     AS date_echeance,
-           CAST(NOTE AS int)         AS payee,
-           NULL                      AS url_pdf
-    FROM   [dbo].[ENT]
-  `)
+async function getFacturesByCuma(pool, cumaId) {
+  const r = await pool.request()
+    .input('dos', sql.VarChar(10), String(cumaId).trim())
+    .query(`
+      SELECT CAST(PINO AS varchar(20)) AS id,
+             RTRIM(DOS)                AS cuma_id,
+             RTRIM(TIERS)              AS adherent_id,
+             CAST(PINO AS varchar(20)) AS numero,
+             PIDT                      AS date,
+             RTRIM(OP)                 AS type,
+             HTMT                      AS montant_ht,
+             TTCMT - HTMT              AS montant_tva,
+             TTCMT                     AS montant_ttc,
+             ECHDT                     AS date_echeance,
+             CAST(NOTE AS int)         AS payee,
+             NULL                      AS url_pdf
+      FROM   [dbo].[ENT]
+      WHERE  RTRIM(DOS) = @dos
+    `)
   return r.recordset
 }
 
 // ---------------------------------------------------------------------------
 // REGLEMENTS — pas dans SQL, lecture depuis Excel
+// (les factures ne sont plus dans getTables — voir getFacturesByCuma)
 // ---------------------------------------------------------------------------
 async function getReglements(pool) {
   const { reglements } = readSheets('reglements')
@@ -149,18 +152,18 @@ async function getNews(pool) {
 // Point d'entrée appelé par l'API
 // ---------------------------------------------------------------------------
 async function getTables(pool) {
-  // Séquentiel : msnodesqlv8 plante en cas de requêtes SQL parallèles sur le même pool
+  // Séquentiel : msnodesqlv8 plante en cas de requêtes SQL parallèles sur le même pool.
+  // Les factures sont exclues ici — elles sont chargées à la demande via getFacturesByCuma.
   const users      = await getUsers(pool)
   const cuma       = await getCuma(pool)
   const user_cuma  = await getUserCuma(pool)
   const adherents  = await getAdherents(pool)
-  const factures   = await getFactures(pool)
   const reglements = await getReglements(pool)
   const contacts   = await getContacts(pool)
   const adresses   = await getAdresses(pool)
   const rib        = await getRib(pool)
   const news       = await getNews(pool)
-  return { users, cuma, user_cuma, adherents, factures, reglements, contacts, adresses, rib, news }
+  return { users, cuma, user_cuma, adherents, factures: [], reglements, contacts, adresses, rib, news }
 }
 
-module.exports = { getTables }
+module.exports = { getTables, getFacturesByCuma }

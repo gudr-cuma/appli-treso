@@ -1,16 +1,21 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronRight, Search } from 'lucide-react'
 import { useDataStore } from '../stores/useDataStore'
-import { useFacturesActiveCuma, formatDate, formatMontant } from '../lib/selectors'
+import { useFacturesActiveCuma, useActiveCumaId, formatDate, formatMontant } from '../lib/selectors'
 import PageHeader from '../components/PageHeader'
 import ActionFooter from '../components/ActionFooter'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 export default function Factures() {
   const [params] = useSearchParams()
+  const cumaId = useActiveCumaId()
+  const loadFactures = useDataStore((s) => s.loadFactures)
+  const facturesLoading = useDataStore((s) => s.facturesLoading)
   const factures = useFacturesActiveCuma()
   const adherents = useDataStore((s) => s.tables.adherents)
   const [q, setQ] = useState('')
+
+  useEffect(() => { loadFactures(cumaId) }, [cumaId, loadFactures])
 
   const filters = useMemo(() => ({
     adherent_id: params.get('adherent_id') || '',
@@ -84,7 +89,10 @@ export default function Factures() {
             </Link>
           </li>
         ))}
-        {!filtered.length && (
+        {facturesLoading && (
+          <li className="px-4 py-8 text-center text-muted text-sm">Chargement des factures…</li>
+        )}
+        {!facturesLoading && !filtered.length && (
           <li className="px-4 py-8 text-center text-muted text-sm">Aucune facture.</li>
         )}
       </ul>

@@ -1,11 +1,16 @@
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { useDataStore } from '../stores/useDataStore'
-import { useFacturesActiveCuma, formatDate, formatMontant } from '../lib/selectors'
+import { useFacturesActiveCuma, useActiveCumaId, formatDate, formatMontant } from '../lib/selectors'
 import PageHeader from '../components/PageHeader'
 import ActionFooter from '../components/ActionFooter'
+import { useEffect } from 'react'
 
 export default function Impayes() {
+  const cumaId = useActiveCumaId()
+  const loadFactures = useDataStore((s) => s.loadFactures)
+  useEffect(() => { loadFactures(cumaId) }, [cumaId, loadFactures])
+
   const factures = useFacturesActiveCuma()
   const adherents = useDataStore((s) => s.tables.adherents)
   const reglements = useDataStore((s) => s.tables.reglements)

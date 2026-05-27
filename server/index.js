@@ -1,7 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const { getPool, closePool } = require('./db')
-const { getTables } = require('./queries')
+const { getTables, getFacturesByCuma } = require('./queries')
 
 require('dotenv').config()
 
@@ -29,6 +29,20 @@ app.get('/api/tables', async (_req, res) => {
     res.json(tables)
   } catch (err) {
     console.error('[API] /api/tables error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Factures filtrées par CUMA (chargement à la demande) ────────────────────
+app.get('/api/factures', async (req, res) => {
+  const cumaId = req.query.cuma_id
+  if (!cumaId) return res.status(400).json({ error: 'cuma_id manquant' })
+  try {
+    const pool = await getPool()
+    const factures = await getFacturesByCuma(pool, cumaId)
+    res.json(factures)
+  } catch (err) {
+    console.error('[API] /api/factures error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })

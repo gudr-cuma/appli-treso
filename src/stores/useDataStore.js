@@ -15,9 +15,17 @@ export const useDataStore = create((set, get) => ({
   error: null,
   tables: emptyTables(),
 
-  // Remet le store à zéro (ex. : changement de source sur la page Login)
-  reset: () => set({ loaded: false, loading: false, error: null, tables: emptyTables() }),
+  // Factures chargées à la demande (SQL uniquement)
+  facturesLoadedFor: null,   // cumaId dont les factures sont en store
+  facturesLoading: false,
 
+  reset: () => set({
+    loaded: false, loading: false, error: null,
+    tables: emptyTables(),
+    facturesLoadedFor: null, facturesLoading: false,
+  }),
+
+  // ── Chargement initial (tout sauf factures en mode SQL) ─────────────────
   loadData: async () => {
     if (get().loading || get().loaded) return
     set({ loading: true, error: null })
@@ -28,19 +36,17 @@ export const useDataStore = create((set, get) => ({
       let tables
 
       if (source === 'sql') {
-        // ── Mode SQL : appel à l'API Express locale ─────────────────────────
         const res = await fetch('/api/tables')
         if (!res.ok) {
           const msg = await res.text().catch(() => `HTTP ${res.status}`)
           throw new Error(`API ${res.status} — ${msg}`)
         }
         tables = await res.json()
-        // Garantir que toutes les clés existent
         for (const name of SHEETS) {
           if (!Array.isArray(tables[name])) tables[name] = []
         }
       } else {
-        // ── Mode Excel : lecture de public/db.xlsx ───────────────────────────
+        // Mode Excel : tout en une fois (fichier léger)
         const res = await fetch('/db.xlsx')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const buffer = await res.arrayBuffer()
@@ -60,6 +66,32 @@ export const useDataStore = create((set, get) => ({
           ? 'Impossible de joindre le serveur API (localhost:3001).\nVérifiez que `npm run dev` est bien démarré.'
           : String(err.message || err)
       set({ error: friendly, loading: false })
+    }
+  },
+
+  // ── Factures par CUMA (SQL uniquement, appelé depuis Factures / Impayés) ──
+  loadFactures: async (cumaId) => {
+    if (!cumaId) return
+    const source = useSourceStore.getState().source
+    // En mode Excel les factures sont déjà dans tables (chargées par loadData)
+    if (source !== 'sql') return
+    // Déjà chargées pour cette CUMA
+    if (get().facturesLoadedFor === cumaId) return
+    if (get().facturesLoading) return
+
+    set({ facturesLoading: true })
+    try {
+      const res = await fetch(`/api/factures?cuma_id=${encodeURIComponent(cumaId)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const factures = await res.json()
+      set((s) => ({
+        tables: { ...s.tables, factures },
+        facturesLoadedFor: cumaId,
+        facturesLoading: false,
+      }))
+    } catch (err) {
+      console.error('[DataStore] loadFactures failed', err)
+      set({ facturesLoading: false })
     }
   },
 }))
