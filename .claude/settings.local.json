@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\\")",
+      "Bash(pandoc --track-changes=all \"C:/_pCloud/Extensions/appli-treso/vibe projet appli tréso.docx\" -o \"C:/_pCloud/Extensions/appli-treso/vibe_projet_extracted.md\")",
+      "PowerShell(python \"C:\\\\Users\\\\guillaume\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\d970acb7-c1e5-441b-ac9e-4033564d2106\\\\c8d02fda-0ffa-49fc-b16c-b0786ca7c30d\\\\skills\\\\docx\\\\scripts\\\\office\\\\unpack.py\" \"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\vibe projet appli tr�so.docx\" \"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\unpacked\")",
+      "PowerShell(Add-Type -AssemblyName System.Xml.Linq; $xml = [System.Xml.Linq.XDocument]::Load\\(\"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\unpacked\\\\word\\\\document.xml\"\\); $ns = [System.Xml.Linq.XName]::Get\\(\"{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t\"\\); $texts = $xml.Descendants\\($ns\\) | ForEach-Object { $_.Value }; $texts -join \"`n\" | Out-File -Encoding utf8 \"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\extracted_text.txt\"; Get-ChildItem \"C:\\\\_pCloud\\\\Extensions\\\\appli-treso\\\\extracted_text.txt\")",
+      "Bash(gh repo *)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

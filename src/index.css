@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    background: theme('colors.surface.DEFAULT');
+    color: theme('colors.navy.DEFAULT');
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-navy text-white rounded-full px-6 py-3 font-semibold shadow active:scale-[0.98] transition;
+  }
+  .btn-secondary {
+    @apply bg-gray-200 text-navy rounded-full px-6 py-3 font-semibold active:scale-[0.98] transition;
+  }
+  .card {
+    @apply bg-surface-card rounded-xl shadow-card p-4;
+  }
+  .pill-select {
+    @apply inline-flex items-center justify-between gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-muted;
+  }
+  .input-line {
+    @apply w-full bg-transparent border-0 border-b border-accent focus:outline-none focus:border-accent-dark py-2 placeholder:text-gray-400;
+  }
+}
+
+/* iOS safe areas */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
