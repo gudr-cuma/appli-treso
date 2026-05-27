@@ -4,14 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --names \"API,VITE\" --prefix-colors \"cyan,green\" \"node server/index.js\" \"vite\"",
+    "client": "vite",
+    "server": "node server/index.js",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "seed": "node scripts/seed-db.mjs"
   },
   "dependencies": {
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "lucide-react": "^0.460.0",
+    "msnodesqlv8": "^5.2.0",
+    "mssql": "^12.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
