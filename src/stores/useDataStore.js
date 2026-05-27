@@ -9,33 +9,40 @@ const SHEETS = [
 
 const emptyTables = () => Object.fromEntries(SHEETS.map((s) => [s, []]))
 
+const isSQL = () => useSourceStore.getState().source === 'sql'
+
 export const useDataStore = create((set, get) => ({
   loaded: false,
   loading: false,
   error: null,
   tables: emptyTables(),
 
-  // Factures chargées à la demande (SQL uniquement)
-  facturesLoadedFor: null,   // cumaId dont les factures sont en store
+  adherentsLoadedFor: null,   // cumaId
+  adherentsLoading: false,
+
+  facturesLoadedFor: null,    // cumaId
   facturesLoading: false,
+
+  detailLoadedFor: null,      // adherent TIERS
+  detailLoading: false,
 
   reset: () => set({
     loaded: false, loading: false, error: null,
     tables: emptyTables(),
-    facturesLoadedFor: null, facturesLoading: false,
+    adherentsLoadedFor: null, adherentsLoading: false,
+    facturesLoadedFor: null,  facturesLoading: false,
+    detailLoadedFor: null,    detailLoading: false,
   }),
 
-  // ── Chargement initial (tout sauf factures en mode SQL) ─────────────────
+  // ── Login : users + cuma + user_cuma + Excel (reglements/rib/news) ─────────
   loadData: async () => {
     if (get().loading || get().loaded) return
     set({ loading: true, error: null })
 
-    const source = useSourceStore.getState().source
-
     try {
       let tables
 
-      if (source === 'sql') {
+      if (isSQL()) {
         const res = await fetch('/api/tables')
         if (!res.ok) {
           const msg = await res.text().catch(() => `HTTP ${res.status}`)
@@ -62,23 +69,37 @@ export const useDataStore = create((set, get) => ({
     } catch (err) {
       console.error('[DataStore] loadData failed', err)
       const friendly =
-        source === 'sql' && (err.message.includes('fetch') || err.message.includes('Failed') || err.message.includes('NetworkError'))
+        isSQL() && (err.message.includes('fetch') || err.message.includes('Failed') || err.message.includes('NetworkError'))
           ? 'Impossible de joindre le serveur API (localhost:3001).\nVérifiez que `npm run dev` est bien démarré.'
           : String(err.message || err)
       set({ error: friendly, loading: false })
     }
   },
 
-  // ── Factures par CUMA (SQL uniquement, appelé depuis Factures / Impayés) ──
-  loadFactures: async (cumaId) => {
-    if (!cumaId) return
-    const source = useSourceStore.getState().source
-    // En mode Excel les factures sont déjà dans tables (chargées par loadData)
-    if (source !== 'sql') return
-    // Déjà chargées pour cette CUMA
-    if (get().facturesLoadedFor === cumaId) return
-    if (get().facturesLoading) return
+  // ── Adhérents d'une CUMA (lazy, SQL uniquement) ──────────────────────────
+  loadAdherents: async (cumaId) => {
+    if (!cumaId || !isSQL()) return
+    if (get().adherentsLoadedFor === cumaId || get().adherentsLoading) return
+    set({ adherentsLoading: true })
+    try {
+      const res = await fetch(`/api/adherents?cuma_id=${encodeURIComponent(cumaId)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const adherents = await res.json()
+      set((s) => ({
+        tables: { ...s.tables, adherents },
+        adherentsLoadedFor: cumaId,
+        adherentsLoading: false,
+      }))
+    } catch (err) {
+      console.error('[DataStore] loadAdherents failed', err)
+      set({ adherentsLoading: false })
+    }
+  },
 
+  // ── Factures d'une CUMA (lazy, SQL uniquement) ──────────────────────────
+  loadFactures: async (cumaId) => {
+    if (!cumaId || !isSQL()) return
+    if (get().facturesLoadedFor === cumaId || get().facturesLoading) return
     set({ facturesLoading: true })
     try {
       const res = await fetch(`/api/factures?cuma_id=${encodeURIComponent(cumaId)}`)
@@ -94,9 +115,28 @@ export const useDataStore = create((set, get) => ({
       set({ facturesLoading: false })
     }
   },
+
+  // ── Contacts + adresses d'un adhérent (lazy, SQL uniquement) ────────────
+  loadAdherentDetail: async (adherentId) => {
+    if (!adherentId || !isSQL()) return
+    if (get().detailLoadedFor === adherentId || get().detailLoading) return
+    set({ detailLoading: true })
+    try {
+      const res = await fetch(`/api/adherent/${encodeURIComponent(adherentId)}/detail`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const { contacts, adresses } = await res.json()
+      set((s) => ({
+        tables: { ...s.tables, contacts, adresses },
+        detailLoadedFor: adherentId,
+        detailLoading: false,
+      }))
+    } catch (err) {
+      console.error('[DataStore] loadAdherentDetail failed', err)
+      set({ detailLoading: false })
+    }
+  },
 }))
 
-// Helpers d'accès aux tables
 export const selectUsers      = (s) => s.tables.users
 export const selectCumas      = (s) => s.tables.cuma
 export const selectUserCuma   = (s) => s.tables.user_cuma

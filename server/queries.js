@@ -3,10 +3,8 @@ const { sql } = require('./db')
 
 // ---------------------------------------------------------------------------
 // USERS — TODO: créer une table TRESO_USERS dans ERP223B
-// Colonnes attendues : id, email, password, prenom, nom, photo_url, role
 // ---------------------------------------------------------------------------
 async function getUsers(pool) {
-  // Pas encore de table SQL dédiée — lecture depuis Excel en attendant
   const { users } = readSheets('users')
   return users
 }
@@ -33,28 +31,27 @@ async function getUserCuma(pool) {
 }
 
 // ---------------------------------------------------------------------------
-// ADHERENTS — table CLI
-// Remarque : CLI n'a pas de colonne PRENOM ni CODE explicite.
-//   - code        = NOMABR (abréviation du tiers)
-//   - dematerialisation = DEMATCOD
+// ADHERENTS — table CLI, filtrés par DOS (lazy via /api/adherents?cuma_id=X)
 // ---------------------------------------------------------------------------
-async function getAdherents(pool) {
-  const r = await pool.request().query(`
-    SELECT RTRIM(TIERS)    AS id,
-           RTRIM(DOS)      AS cuma_id,
-           RTRIM(NOMABR)   AS code,
-           RTRIM(NOM)      AS nom,
-           NULL            AS prenom,
-           RTRIM(REGL)     AS mode_reglement,
-           RTRIM(DEMATCOD) AS dematerialisation
-    FROM   [dbo].[CLI]
-  `)
+async function getAdherentsByCuma(pool, cumaId) {
+  const r = await pool.request()
+    .input('dos', sql.VarChar(10), String(cumaId).trim())
+    .query(`
+      SELECT RTRIM(TIERS)    AS id,
+             RTRIM(DOS)      AS cuma_id,
+             RTRIM(NOMABR)   AS code,
+             RTRIM(NOM)      AS nom,
+             NULL            AS prenom,
+             RTRIM(REGL)     AS mode_reglement,
+             RTRIM(DEMATCOD) AS dematerialisation
+      FROM   [dbo].[CLI]
+      WHERE  RTRIM(DOS) = @dos
+    `)
   return r.recordset
 }
 
 // ---------------------------------------------------------------------------
-// FACTURES — table ENT, filtrées par DOS (cuma_id)
-// Chargées à la demande via /api/factures?cuma_id=X (pas dans getTables).
+// FACTURES — table ENT, filtrées par DOS (lazy via /api/factures?cuma_id=X)
 // ---------------------------------------------------------------------------
 async function getFacturesByCuma(pool, cumaId) {
   const r = await pool.request()
@@ -79,91 +76,78 @@ async function getFacturesByCuma(pool, cumaId) {
 }
 
 // ---------------------------------------------------------------------------
-// REGLEMENTS — pas dans SQL, lecture depuis Excel
-// (les factures ne sont plus dans getTables — voir getFacturesByCuma)
+// CONTACTS + ADRESSES — par adhérent (lazy via /api/adherent/:tiers/detail)
+// T2 stocke TEL, TELGSM, EMAIL sur une ligne → dépliés en {type, valeur}.
 // ---------------------------------------------------------------------------
-async function getReglements(pool) {
-  const { reglements } = readSheets('reglements')
-  return reglements
-}
-
-// ---------------------------------------------------------------------------
-// CONTACTS — table T2
-// T2 stocke TEL, TELGSM et EMAIL dans la même ligne.
-// On les déplie ici en autant de lignes {type, valeur}.
-// ---------------------------------------------------------------------------
-async function getContacts(pool) {
-  const r = await pool.request().query(`
-    SELECT T2_ID                  AS rid,
-           RTRIM(DOS)             AS cuma_id,
-           RTRIM(TIERS)           AS adherent_id,
-           NULLIF(RTRIM(TEL),   '') AS tel,
-           NULLIF(RTRIM(TELGSM),'') AS gsm,
-           NULLIF(RTRIM(EMAIL), '') AS email
-    FROM   [dbo].[T2]
-  `)
+function expandContacts(recordset) {
   const rows = []
-  for (const row of r.recordset) {
-    if (row.tel)
-      rows.push({ id: `${row.rid}_tel`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'tel',    valeur: row.tel })
-    if (row.gsm)
-      rows.push({ id: `${row.rid}_gsm`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'telgsm', valeur: row.gsm })
-    if (row.email)
-      rows.push({ id: `${row.rid}_email`, cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'email',  valeur: row.email })
+  for (const row of recordset) {
+    if (row.tel)   rows.push({ id: `${row.rid}_tel`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'tel',    valeur: row.tel })
+    if (row.gsm)   rows.push({ id: `${row.rid}_gsm`,   cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'telgsm', valeur: row.gsm })
+    if (row.email) rows.push({ id: `${row.rid}_email`, cuma_id: row.cuma_id, adherent_id: row.adherent_id, type: 'email',  valeur: row.email })
   }
   return rows
 }
 
-// ---------------------------------------------------------------------------
-// ADRESSES — table T1
-// Remarque : libelle n'existe pas dans T1 (→ null).
-// ---------------------------------------------------------------------------
-async function getAdresses(pool) {
-  const r = await pool.request().query(`
-    SELECT T1_ID                AS id,
-           RTRIM(TIERS)         AS adherent_id,
-           NULL                 AS libelle,
-           NULLIF(RTRIM(RUE), '') AS ligne1,
-           RTRIM(CPOSTAL)       AS cp,
-           RTRIM(VIL)           AS ville,
-           RTRIM(DOS)           AS cuma_id
-    FROM   [dbo].[T1]
-  `)
-  return r.recordset
+async function getDetailByAdherent(pool, tiersId) {
+  const tiers = String(tiersId).trim()
+
+  const rc = await pool.request()
+    .input('tiers', sql.VarChar(20), tiers)
+    .query(`
+      SELECT T2_ID                   AS rid,
+             RTRIM(DOS)              AS cuma_id,
+             RTRIM(TIERS)            AS adherent_id,
+             NULLIF(RTRIM(TEL),  '') AS tel,
+             NULLIF(RTRIM(TELGSM),'') AS gsm,
+             NULLIF(RTRIM(EMAIL),'') AS email
+      FROM   [dbo].[T2]
+      WHERE  RTRIM(TIERS) = @tiers
+    `)
+
+  const ra = await pool.request()
+    .input('tiers', sql.VarChar(20), tiers)
+    .query(`
+      SELECT T1_ID                  AS id,
+             RTRIM(TIERS)           AS adherent_id,
+             NULL                   AS libelle,
+             NULLIF(RTRIM(RUE),'')  AS ligne1,
+             RTRIM(CPOSTAL)         AS cp,
+             RTRIM(VIL)             AS ville,
+             RTRIM(DOS)             AS cuma_id
+      FROM   [dbo].[T1]
+      WHERE  RTRIM(TIERS) = @tiers
+    `)
+
+  return {
+    contacts: expandContacts(rc.recordset),
+    adresses: ra.recordset,
+  }
 }
 
 // ---------------------------------------------------------------------------
-// RIB — pas dans SQL, lecture depuis Excel
+// REGLEMENTS / RIB / NEWS — lecture depuis Excel
 // ---------------------------------------------------------------------------
-async function getRib(pool) {
-  const { rib } = readSheets('rib')
-  return rib
-}
+async function getReglements() { return readSheets('reglements').reglements }
+async function getRib()        { return readSheets('rib').rib }
+async function getNews()       { return readSheets('news').news }
 
 // ---------------------------------------------------------------------------
-// NEWS — lecture depuis Excel
-// ---------------------------------------------------------------------------
-async function getNews(pool) {
-  const { news } = readSheets('news')
-  return news
-}
-
-// ---------------------------------------------------------------------------
-// Point d'entrée appelé par l'API
+// Point d'entrée initial — login (uniquement les petites tables)
 // ---------------------------------------------------------------------------
 async function getTables(pool) {
-  // Séquentiel : msnodesqlv8 plante en cas de requêtes SQL parallèles sur le même pool.
-  // Les factures sont exclues ici — elles sont chargées à la demande via getFacturesByCuma.
-  const users      = await getUsers(pool)
-  const cuma       = await getCuma(pool)
-  const user_cuma  = await getUserCuma(pool)
-  const adherents  = await getAdherents(pool)
-  const reglements = await getReglements(pool)
-  const contacts   = await getContacts(pool)
-  const adresses   = await getAdresses(pool)
-  const rib        = await getRib(pool)
-  const news       = await getNews(pool)
-  return { users, cuma, user_cuma, adherents, factures: [], reglements, contacts, adresses, rib, news }
+  // Séquentiel obligatoire (msnodesqlv8 crashe en parallèle)
+  const users     = await getUsers(pool)
+  const cuma      = await getCuma(pool)
+  const user_cuma = await getUserCuma(pool)
+  const reglements = await getReglements()
+  const rib       = await getRib()
+  const news      = await getNews()
+  return {
+    users, cuma, user_cuma,
+    adherents: [], factures: [], contacts: [], adresses: [],
+    reglements, rib, news,
+  }
 }
 
-module.exports = { getTables, getFacturesByCuma }
+module.exports = { getTables, getAdherentsByCuma, getFacturesByCuma, getDetailByAdherent }

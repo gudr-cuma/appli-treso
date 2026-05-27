@@ -6,10 +6,16 @@ import { reglementsEnAttenteParAdherent } from '../lib/selectors'
 import { useCumaStore } from '../stores/useCumaStore'
 import PageHeader from '../components/PageHeader'
 import ActionFooter from '../components/ActionFooter'
+import { useEffect } from 'react'
 
 export default function Adherents() {
-  const adherents = useAdherentsActiveCuma()
   const cumaId = useCumaStore((s) => s.activeCumaId)
+  const loadAdherents = useDataStore((s) => s.loadAdherents)
+  const adherentsLoading = useDataStore((s) => s.adherentsLoading)
+
+  useEffect(() => { loadAdherents(cumaId) }, [cumaId, loadAdherents])
+
+  const adherents = useAdherentsActiveCuma()
   const allTables = useDataStore((s) => s.tables)
 
   const countAttente = (adherentId) =>
@@ -38,7 +44,10 @@ export default function Adherents() {
             </Link>
           </li>
         ))}
-        {!adherents.length && (
+        {adherentsLoading && (
+          <li className="px-4 py-8 text-center text-muted text-sm">Chargement des adhérents…</li>
+        )}
+        {!adherentsLoading && !adherents.length && (
           <li className="px-4 py-8 text-center text-muted text-sm">Aucun adhérent.</li>
         )}
       </ul>
